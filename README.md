@@ -49,6 +49,19 @@ numbers aren't mistaken for real occupancy.
 | Page file in use vs total | How much of your page file is actually holding paged-out commit |
 | Resident VRAM vs per-process committed | What's really on the card vs virtualized/double-counted accounting |
 
+## Download
+
+Grab **RVMemViewer.exe** from the [Releases](../../releases) page and run it -
+it's self-contained (static CRT, only system DLLs + fonts), no installer.
+Requires Windows 10/11 x64.
+
+> **Windows SmartScreen note:** the release binary is unsigned (no paid
+> code-signing certificate), so on first launch SmartScreen may show
+> *"Windows protected your PC."* This is expected for indie/unsigned apps, not a
+> sign of anything wrong. To run it: click **More info -> Run anyway**. If you'd
+> rather not trust the prebuilt binary, build it yourself from source (below) -
+> the result is identical.
+
 ## Build
 
 Requires Visual Studio 2022/2026 (MSVC + Windows SDK) and git. No CMake needed.
