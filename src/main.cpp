@@ -678,6 +678,66 @@ static void LoadFonts() {
 }
 
 // ---------------------------------------------------------------------------
+// Render state + single-frame render (callable from the loop AND from WM_SIZE,
+// so the window keeps drawing during Win32's modal drag-resize loop).
+// ---------------------------------------------------------------------------
+static SystemMemory               g_sys;
+static std::vector<AdapterVram>   g_gpus;
+static std::vector<ProcessMemory> g_procs;
+static std::vector<ProcessVram>   g_procVram;
+static Histories                  g_H;
+static uint64_t                   g_accessiblePrivate = 0;
+static double                     g_sinceRefresh = 1e9;
+static HWND                       g_hwnd = nullptr;
+static bool                       g_imguiReady = false;
+
+static void RenderFrame() {
+    if (!g_imguiReady || !g_pSwapChain) return;
+
+    // Apply a pending resize (queued by WM_SIZE) before drawing.
+    if (g_resizeW != 0 && g_resizeH != 0) {
+        CleanupRenderTarget();
+        g_pSwapChain->ResizeBuffers(0, g_resizeW, g_resizeH, DXGI_FORMAT_UNKNOWN, 0);
+        g_resizeW = g_resizeH = 0;
+        CreateRenderTarget();
+    }
+    if (!g_mainRTV) return;
+
+    // Refresh data ~1 Hz (cheap frames in between keep the UI responsive).
+    ImGuiIO& io = ImGui::GetIO();
+    g_sinceRefresh += io.DeltaTime;
+    if (g_sinceRefresh >= 1.0) {
+        g_sinceRefresh = 0.0;
+        QuerySystemMemory(g_sys);
+        QueryVram(g_gpus);
+        QueryProcessVram(g_procVram);
+        QueryProcesses(g_procs, g_accessiblePrivate);
+        g_H.ram.push((float)g_sys.physPercent);
+        g_H.commit.push((float)g_sys.commitPercent);
+        float vf = 0;
+        if (!g_gpus.empty() && g_gpus[0].hasUsage && g_gpus[0].dedicatedTotal)
+            vf = (float)((double)g_gpus[0].dedicatedUsage / g_gpus[0].dedicatedTotal);
+        g_H.vram.push(vf);
+    }
+
+    ImGui_ImplDX11_NewFrame();
+    ImGui_ImplWin32_NewFrame();
+    ImGui::NewFrame();
+    PushF(g_fBody);
+    DrawUI(g_sys, g_gpus, g_procs, g_accessiblePrivate, g_procVram, g_H);
+    ImGui::PopFont();
+    ImGui::Render();
+
+    const float clear[4] = { col::bg.x, col::bg.y, col::bg.z, 1.0f };
+    g_pd3dDeviceContext->OMSetRenderTargets(1, &g_mainRTV, nullptr);
+    g_pd3dDeviceContext->ClearRenderTargetView(g_mainRTV, clear);
+    ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+
+    HRESULT hr = g_pSwapChain->Present(1, 0);
+    g_swapChainOccluded = (hr == DXGI_STATUS_OCCLUDED);
+}
+
+// ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
@@ -697,6 +757,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
         UnregisterClassW(wc.lpszClassName, wc.hInstance);
         return 1;
     }
+    g_hwnd = hwnd;
     ShowWindow(hwnd, SW_SHOWDEFAULT);
     UpdateWindow(hwnd);
 
@@ -711,14 +772,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
     ImGui_ImplWin32_Init(hwnd);
     ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
     InitVram();
-
-    SystemMemory sys{};
-    std::vector<AdapterVram>   gpus;
-    std::vector<ProcessMemory> procs;
-    std::vector<ProcessVram>   procVram;
-    Histories                  H;
-    uint64_t accessiblePrivate = 0;
-    double   sinceRefresh = 1e9;
+    g_imguiReady = true;  // safe to render (incl. from WM_SIZE) from here on
 
     bool running = true;
     while (running) {
@@ -730,48 +784,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
         }
         if (!running) break;
 
+        // Skip rendering while minimized/occluded.
         if (g_swapChainOccluded && g_pSwapChain->Present(0, DXGI_PRESENT_TEST) == DXGI_STATUS_OCCLUDED) {
             Sleep(80); continue;
         }
         g_swapChainOccluded = false;
 
-        if (g_resizeW != 0 && g_resizeH != 0) {
-            CleanupRenderTarget();
-            g_pSwapChain->ResizeBuffers(0, g_resizeW, g_resizeH, DXGI_FORMAT_UNKNOWN, 0);
-            g_resizeW = g_resizeH = 0;
-            CreateRenderTarget();
-        }
-
-        sinceRefresh += io.DeltaTime;
-        if (sinceRefresh >= 1.0) {
-            sinceRefresh = 0.0;
-            QuerySystemMemory(sys);
-            QueryVram(gpus);
-            QueryProcessVram(procVram);
-            QueryProcesses(procs, accessiblePrivate);
-            H.ram.push((float)sys.physPercent);
-            H.commit.push((float)sys.commitPercent);
-            float vf = 0;
-            if (!gpus.empty() && gpus[0].hasUsage && gpus[0].dedicatedTotal)
-                vf = (float)((double)gpus[0].dedicatedUsage / gpus[0].dedicatedTotal);
-            H.vram.push(vf);
-        }
-
-        ImGui_ImplDX11_NewFrame();
-        ImGui_ImplWin32_NewFrame();
-        ImGui::NewFrame();
-        PushF(g_fBody);
-        DrawUI(sys, gpus, procs, accessiblePrivate, procVram, H);
-        ImGui::PopFont();
-        ImGui::Render();
-
-        const float clear[4] = { col::bg.x, col::bg.y, col::bg.z, 1.0f };
-        g_pd3dDeviceContext->OMSetRenderTargets(1, &g_mainRTV, nullptr);
-        g_pd3dDeviceContext->ClearRenderTargetView(g_mainRTV, clear);
-        ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
-
-        HRESULT hr = g_pSwapChain->Present(1, 0);
-        g_swapChainOccluded = (hr == DXGI_STATUS_OCCLUDED);
+        RenderFrame();
         if (GetForegroundWindow() != hwnd) Sleep(120);
     }
 
@@ -836,8 +855,13 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam)) return true;
     switch (msg) {
     case WM_SIZE:
-        if (wParam != SIZE_MINIMIZED) { g_resizeW = LOWORD(lParam); g_resizeH = HIWORD(lParam); }
+        if (wParam != SIZE_MINIMIZED) {
+            g_resizeW = LOWORD(lParam); g_resizeH = HIWORD(lParam);
+            RenderFrame();  // keep drawing during Win32's modal drag-resize loop
+        }
         return 0;
+    case WM_ERASEBKGND:
+        return 1;           // D3D paints every pixel; skip GDI erase to avoid flicker
     case WM_SYSCOMMAND:
         if ((wParam & 0xfff0) == SC_KEYMENU) return 0;
         break;
