@@ -555,7 +555,7 @@ static void DrawUI(const SystemMemory& sys, const std::vector<AdapterVram>& gpus
 
     // ---- Content ----
     ImGui::PushStyleColor(ImGuiCol_ChildBg, col::bg);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(22, 20));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(34, 30));
     ImGui::BeginChild("content", ImVec2(0, 0), 0);
     switch (page) {
         case 0: PageDashboard(sys, gpus, H); break;
