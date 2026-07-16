@@ -496,17 +496,17 @@ static void PageGpu(const std::vector<AdapterVram>& gpus, const std::vector<Proc
 static void NavItem(const char* label, int idx, int* page) {
     bool sel = (*page == idx);
     ImVec2 p0 = ImGui::GetCursorScreenPos();
-    ImGui::PushStyleColor(ImGuiCol_Header,        Alpha(col::blue, 0.16f));
-    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, Alpha(col::text, 0.06f));
-    ImGui::PushStyleColor(ImGuiCol_HeaderActive,  Alpha(col::blue, 0.22f));
-    ImGui::PushStyleColor(ImGuiCol_Text, sel ? col::text : col::dim);
-    if (ImGui::Selectable(label, sel, 0, ImVec2(0, 34))) *page = idx;
+    // Buttons keep their highlight inside the padded area (Selectable bleeds to
+    // the window edge), so the active pill reads as a proper inset container.
+    ImGui::PushStyleColor(ImGuiCol_Button,        sel ? Alpha(col::blue, 0.16f) : ImVec4(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, sel ? Alpha(col::blue, 0.20f) : Alpha(col::text, 0.06f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive,  Alpha(col::blue, 0.24f));
+    ImGui::PushStyleColor(ImGuiCol_Text,          sel ? col::text : col::dim);
+    ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
+    if (ImGui::Button(label, ImVec2(-FLT_MIN, 38.0f))) *page = idx;
+    ImGui::PopStyleVar();
     ImGui::PopStyleColor(4);
-    if (sel) { // accent bar on the left edge
-        ImDrawList* dl = ImGui::GetWindowDrawList();
-        dl->AddRectFilled(ImVec2(p0.x - 8, p0.y + 6), ImVec2(p0.x - 5, p0.y + 28),
-                          ImGui::GetColorU32(col::blue), 2.0f);
-    }
+    (void)p0;
 }
 
 static void DrawUI(const SystemMemory& sys, const std::vector<AdapterVram>& gpus,
@@ -534,9 +534,9 @@ static void DrawUI(const SystemMemory& sys, const std::vector<AdapterVram>& gpus
     ImGui::PopFont();
     ImGui::TextColored(col::faint, "RAM \xc2\xb7 VRAM \xc2\xb7 commit");
     ImGui::Dummy(ImVec2(0, 18));
-    NavItem("  Dashboard", 0, &page);
-    NavItem("  Processes", 1, &page);
-    NavItem("  GPU Memory", 2, &page);
+    NavItem("Dashboard", 0, &page);
+    NavItem("Processes", 1, &page);
+    NavItem("GPU Memory", 2, &page);
 
     // pinned footer: live RAM/commit mini readout
     ImGui::SetCursorPosY(ImGui::GetWindowHeight() - 78);
