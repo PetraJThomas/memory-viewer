@@ -1,0 +1,34 @@
+# --- Build output ---
+build/
+out/
+bin/
+obj/
+
+# --- MSVC / compiler artifacts ---
+*.obj
+*.exe
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.dll
+*.idb
+*.res
+*.tlog
+*.log
+
+# --- Visual Studio ---
+.vs/
+*.user
+*.suo
+*.vcxproj.user
+CMakeSettings.json
+
+# --- Vendored dependency (cloned via build instructions, not committed) ---
+# See README: `git clone --depth 1 https://github.com/ocornut/imgui third_party\imgui`
+third_party/imgui/
+
+# --- Misc ---
+imgui.ini
+*.tmp
+Thumbs.db
