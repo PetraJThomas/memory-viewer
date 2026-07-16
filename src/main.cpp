@@ -322,7 +322,7 @@ static void PageDashboard(const SystemMemory& sys, const std::vector<AdapterVram
         char pk[32];
         ImGui::PushTextWrapPos(0.0f);
         ImGui::TextColored(col::dim,
-            "Commit charge is what your page file backs \xe2\x80\x94 limit = RAM + all page files. "
+            "Commit charge is what your page file backs - limit = RAM + all page files. "
             "Peak this session: %s.", FmtBytes(sys.commitPeak, pk, sizeof(pk)));
         ImGui::PopTextWrapPos();
     }
@@ -353,7 +353,7 @@ static void PageDashboard(const SystemMemory& sys, const std::vector<AdapterVram
 static void PageProcesses(const SystemMemory& sys, const std::vector<ProcessMemory>& procs,
                           uint64_t accessiblePrivate) {
     PushF(g_fH1); ImGui::TextColored(col::text, "Processes"); ImGui::PopFont();
-    ImGui::TextColored(col::dim, "Private commit vs working set \xe2\x80\x94 who actually fills your page file");
+    ImGui::TextColored(col::dim, "Private commit vs working set - who actually fills your page file");
     ImGui::Dummy(ImVec2(0, 6));
 
     // High-level headline (mirrors the GPU tab's resident card)
@@ -472,7 +472,7 @@ static void PageGpu(const std::vector<AdapterVram>& gpus, const std::vector<Proc
         ImGui::PushTextWrapPos(0.0f);
         ImGui::TextColored(col::dim,
             "These are the processes holding VRAM. Values are committed (virtualized) and "
-            "double-count shared surfaces, so rank by the column \xe2\x80\x94 don't sum it.");
+            "double-count shared surfaces, so rank by the column - don't sum it.");
         ImGui::PopTextWrapPos();
         ImGui::PopFont();
 
@@ -492,14 +492,14 @@ static void PageGpu(const std::vector<AdapterVram>& gpus, const std::vector<Proc
             ImGui::PushTextWrapPos(0.0f);
             ImGui::TextColored(col::text,
                 "Excluding the compositor, these processes hold %s of the %s resident on-card "
-                "\xe2\x80\x94 that's what's in your VRAM. The rest is the compositor's own composition "
+                "- that's what's in your VRAM. The rest is the compositor's own composition "
                 "surfaces plus driver/system memory not attributed to any process.",
                 FmtBytes(sumApps, sa, sizeof(sa)), FmtBytes(residentDed, sr, sizeof(sr)));
             ImGui::PopTextWrapPos();
             if (dwmDed) {
                 ImGui::TextColored(col::amber, "dwm.exe reports %s", FmtBytes(dwmDed, a, sizeof(a)));
                 ImGui::SameLine();
-                ImGui::TextColored(col::dim, "\xe2\x80\x94 the compositor double-counts every visible window's surface.");
+                ImGui::TextColored(col::dim, "- the compositor double-counts every visible window's surface.");
             }
             ImGui::PopFont();
         }
