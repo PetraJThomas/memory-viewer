@@ -92,7 +92,7 @@ static const char* FmtBytes(uint64_t b, char* buf, size_t n) {
 // History ring buffer (one sample/sec, fixed window)
 // ---------------------------------------------------------------------------
 struct History {
-    static const int CAP = 120;
+    static const int CAP = 240;  // 2 minutes at the 0.5 s refresh tick
     float v[CAP] = {};
     int   count  = 0;
     void push(float x) {
@@ -328,28 +328,34 @@ static void PageDashboard(const SystemMemory& sys, const std::vector<AdapterVram
     }
     ImGui::Dummy(ImVec2(0, 6));
 
-    // --- Page file bar (how much commit is paged out vs total page file) ---
+    // --- Page file bar (cold: how much commit is paged out to disk) ---
     {
         double pf = sys.pageFileTotal ? (double)sys.pageFileInUse / sys.pageFileTotal : 0.0;
         UsageBar("Page file  \xc2\xb7  commit paged out to disk vs total page file",
                  sys.pageFileInUse, sys.pageFileTotal, pf, col::goldSoft);
     }
+    ImGui::Dummy(ImVec2(0, 6));
+
+    // --- Compressed bar (warm: store size vs remaining/available RAM) ---
+    {
+        double cf = sys.physAvail ? (double)sys.compressed / sys.physAvail : 0.0;
+        UsageBar("Compressed  \xc2\xb7  cold pages kept warm in RAM vs remaining RAM",
+                 sys.compressed, sys.physAvail, cf, col::amber);
+    }
     ImGui::Dummy(ImVec2(0, 8));
 
-    // --- Detail chips (two rows of five) ---
+    // --- Detail chips (two rows of four) ---
     const float cgap = 12.0f;
-    float cw = (ImGui::GetContentRegionAvail().x - 4 * cgap) / 5.0f;
-    char cb[10][40];
+    float cw = (ImGui::GetContentRegionAvail().x - 3 * cgap) / 4.0f;
+    char cb[8][40];
     Chip("Available",      FmtBytes(sys.physAvail,      cb[0], 40), cw); ImGui::SameLine(0, cgap);
-    Chip("Compressed",     FmtBytes(sys.compressed,     cb[1], 40), cw); ImGui::SameLine(0, cgap);
-    Chip("Cached",         FmtBytes(sys.systemCache,    cb[2], 40), cw); ImGui::SameLine(0, cgap);
-    Chip("Commit peak",    FmtBytes(sys.commitPeak,     cb[3], 40), cw); ImGui::SameLine(0, cgap);
-    snprintf(cb[4], 40, "%u%%", sys.memoryLoad); Chip("Memory load", cb[4], cw);
-    Chip("Paged pool",     FmtBytes(sys.kernelPaged,    cb[5], 40), cw); ImGui::SameLine(0, cgap);
-    Chip("Non-paged pool", FmtBytes(sys.kernelNonpaged, cb[6], 40), cw); ImGui::SameLine(0, cgap);
-    snprintf(cb[7], 40, "%u", sys.processCount); Chip("Processes", cb[7], cw); ImGui::SameLine(0, cgap);
-    snprintf(cb[8], 40, "%u", sys.threadCount);  Chip("Threads",   cb[8], cw); ImGui::SameLine(0, cgap);
-    snprintf(cb[9], 40, "%u", sys.handleCount);  Chip("Handles",   cb[9], cw);
+    Chip("Cached",         FmtBytes(sys.systemCache,    cb[1], 40), cw); ImGui::SameLine(0, cgap);
+    Chip("Commit peak",    FmtBytes(sys.commitPeak,     cb[2], 40), cw); ImGui::SameLine(0, cgap);
+    snprintf(cb[3], 40, "%u%%", sys.memoryLoad); Chip("Memory load", cb[3], cw);
+    Chip("Paged pool",     FmtBytes(sys.kernelPaged,    cb[4], 40), cw); ImGui::SameLine(0, cgap);
+    Chip("Non-paged pool", FmtBytes(sys.kernelNonpaged, cb[5], 40), cw); ImGui::SameLine(0, cgap);
+    snprintf(cb[6], 40, "%u", sys.processCount); Chip("Processes", cb[6], cw); ImGui::SameLine(0, cgap);
+    snprintf(cb[7], 40, "%u", sys.handleCount);  Chip("Handles",   cb[7], cw);
 }
 
 static void PageProcesses(const SystemMemory& sys, const std::vector<ProcessMemory>& procs,
@@ -728,7 +734,7 @@ static void RenderFrame() {
     // Refresh data ~1 Hz (cheap frames in between keep the UI responsive).
     ImGuiIO& io = ImGui::GetIO();
     g_sinceRefresh += io.DeltaTime;
-    if (g_sinceRefresh >= 1.0) {
+    if (g_sinceRefresh >= 0.5) {
         g_sinceRefresh = 0.0;
         QuerySystemMemory(g_sys);
         QueryVram(g_gpus);
