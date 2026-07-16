@@ -28,6 +28,10 @@ struct SystemMemory {
     uint64_t kernelPaged    = 0;
     uint64_t kernelNonpaged = 0;
 
+    // Memory compression: cold pages compressed and kept *in RAM* (warm) by the
+    // "Memory Compression" process instead of being paged to disk (cold).
+    uint64_t compressed = 0; // size of the compression store in RAM
+
     // Counts (from GetPerformanceInfo)
     uint32_t processCount = 0;
     uint32_t threadCount  = 0;

@@ -336,18 +336,20 @@ static void PageDashboard(const SystemMemory& sys, const std::vector<AdapterVram
     }
     ImGui::Dummy(ImVec2(0, 8));
 
-    // --- Detail chips (two rows of four) ---
+    // --- Detail chips (two rows of five) ---
     const float cgap = 12.0f;
-    float cw = (ImGui::GetContentRegionAvail().x - 3 * cgap) / 4.0f;
-    char cb[8][40];
+    float cw = (ImGui::GetContentRegionAvail().x - 4 * cgap) / 5.0f;
+    char cb[10][40];
     Chip("Available",      FmtBytes(sys.physAvail,      cb[0], 40), cw); ImGui::SameLine(0, cgap);
-    Chip("Cached",         FmtBytes(sys.systemCache,    cb[1], 40), cw); ImGui::SameLine(0, cgap);
-    Chip("Commit peak",    FmtBytes(sys.commitPeak,     cb[2], 40), cw); ImGui::SameLine(0, cgap);
-    Chip("Paged pool",     FmtBytes(sys.kernelPaged,    cb[3], 40), cw);
-    Chip("Non-paged pool", FmtBytes(sys.kernelNonpaged, cb[4], 40), cw); ImGui::SameLine(0, cgap);
-    snprintf(cb[5], 40, "%u", sys.processCount); Chip("Processes", cb[5], cw); ImGui::SameLine(0, cgap);
-    snprintf(cb[6], 40, "%u", sys.threadCount);  Chip("Threads",   cb[6], cw); ImGui::SameLine(0, cgap);
-    snprintf(cb[7], 40, "%u", sys.handleCount);  Chip("Handles",   cb[7], cw);
+    Chip("Compressed",     FmtBytes(sys.compressed,     cb[1], 40), cw); ImGui::SameLine(0, cgap);
+    Chip("Cached",         FmtBytes(sys.systemCache,    cb[2], 40), cw); ImGui::SameLine(0, cgap);
+    Chip("Commit peak",    FmtBytes(sys.commitPeak,     cb[3], 40), cw); ImGui::SameLine(0, cgap);
+    snprintf(cb[4], 40, "%u%%", sys.memoryLoad); Chip("Memory load", cb[4], cw);
+    Chip("Paged pool",     FmtBytes(sys.kernelPaged,    cb[5], 40), cw); ImGui::SameLine(0, cgap);
+    Chip("Non-paged pool", FmtBytes(sys.kernelNonpaged, cb[6], 40), cw); ImGui::SameLine(0, cgap);
+    snprintf(cb[7], 40, "%u", sys.processCount); Chip("Processes", cb[7], cw); ImGui::SameLine(0, cgap);
+    snprintf(cb[8], 40, "%u", sys.threadCount);  Chip("Threads",   cb[8], cw); ImGui::SameLine(0, cgap);
+    snprintf(cb[9], 40, "%u", sys.handleCount);  Chip("Handles",   cb[9], cw);
 }
 
 static void PageProcesses(const SystemMemory& sys, const std::vector<ProcessMemory>& procs,
@@ -367,9 +369,11 @@ static void PageProcesses(const SystemMemory& sys, const std::vector<ProcessMemo
         double pf = sys.pageFileTotal ? (double)sys.pageFileInUse / sys.pageFileTotal : 0.0;
         UsageBar("Page file  \xc2\xb7  commit paged out to disk vs total page file",
                  sys.pageFileInUse, sys.pageFileTotal, pf, col::goldSoft);
-        char sum[32];
+        char sum[32], cmp[32];
         ImGui::TextColored(col::dim, "%d processes  \xc2\xb7  %s readable private commit total",
                            (int)procs.size(), FmtBytes(accessiblePrivate, sum, sizeof(sum)));
+        ImGui::TextColored(col::dim, "%s compressed and kept warm in RAM (vs paged cold to disk above)",
+                           FmtBytes(sys.compressed, cmp, sizeof(cmp)));
     }
     CardEnd();
     ImGui::Dummy(ImVec2(0, 4));

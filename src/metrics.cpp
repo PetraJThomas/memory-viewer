@@ -5,12 +5,14 @@
 #include <windows.h>
 #include <psapi.h>
 #include <tlhelp32.h>
+#include <winternl.h>
 #include <dxgi1_4.h>
 #include <wrl/client.h>
 #include <pdh.h>
 #include <pdhmsg.h>
 #include <algorithm>
 #include <cstdio>
+#include <cwchar>
 
 #pragma comment(lib, "psapi.lib")
 #pragma comment(lib, "dxgi.lib")
@@ -67,6 +69,38 @@ static void BuildPidNameMap(std::vector<std::pair<DWORD, std::string>>& map) {
 // ---------------------------------------------------------------------------
 // System memory
 // ---------------------------------------------------------------------------
+
+// Compression-store size = working set of the "Memory Compression" process.
+// Task Manager's source; there is no performance counter for it.
+static uint64_t QueryCompressedBytes() {
+    typedef LONG (NTAPI* PFN_NQSI)(ULONG, PVOID, ULONG, PULONG);
+    static PFN_NQSI nq = (PFN_NQSI)GetProcAddress(
+        GetModuleHandleW(L"ntdll.dll"), "NtQuerySystemInformation");
+    if (!nq) return 0;
+
+    ULONG need = 512 * 1024;
+    std::vector<BYTE> buf;
+    LONG st = 0;
+    for (int tries = 0; tries < 8; ++tries) {
+        buf.resize(need);
+        ULONG ret = 0;
+        st = nq(5 /*SystemProcessInformation*/, buf.data(), need, &ret);
+        if ((ULONG)st != 0xC0000004UL /*STATUS_INFO_LENGTH_MISMATCH*/) break;
+        need = (ret > need) ? ret + 65536 : need * 2;
+    }
+    if (st != 0) return 0;
+
+    for (BYTE* p = buf.data();;) {
+        auto* e = reinterpret_cast<SYSTEM_PROCESS_INFORMATION*>(p);
+        if (e->ImageName.Buffer && e->ImageName.Length == 18 * sizeof(wchar_t) &&
+            wcsncmp(e->ImageName.Buffer, L"Memory Compression", 18) == 0)
+            return (uint64_t)e->WorkingSetSize;
+        if (e->NextEntryOffset == 0) break;
+        p += e->NextEntryOffset;
+    }
+    return 0;
+}
+
 bool QuerySystemMemory(SystemMemory& out) {
     MEMORYSTATUSEX ms{};
     ms.dwLength = sizeof(ms);
@@ -115,6 +149,7 @@ bool QuerySystemMemory(SystemMemory& out) {
         if (out.pageFileTotal == 0 && out.commitLimit > out.physTotal)
             out.pageFileTotal = out.commitLimit - out.physTotal;
     }
+    out.compressed = QueryCompressedBytes();
     return true;
 }
 
