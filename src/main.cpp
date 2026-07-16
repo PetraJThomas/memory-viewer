@@ -50,27 +50,28 @@ static void PushF(ImFont* f) { ImGui::PushFont(f, f->LegacySize); }
 // ---------------------------------------------------------------------------
 // Palette
 // ---------------------------------------------------------------------------
+// Gold + red on near-black, taken from the RV logo (metallic gold "R",
+// glossy red "V", gold circuit-chip, black field).
 namespace col {
-    const ImVec4 bg      (0.055f, 0.060f, 0.070f, 1.00f);
-    const ImVec4 side    (0.085f, 0.092f, 0.108f, 1.00f);
-    const ImVec4 card    (0.105f, 0.113f, 0.130f, 1.00f);
-    const ImVec4 cardHi  (0.140f, 0.150f, 0.172f, 1.00f);
-    const ImVec4 line    (1.000f, 1.000f, 1.000f, 0.055f);
-    const ImVec4 text    (0.902f, 0.914f, 0.937f, 1.00f);
-    const ImVec4 dim     (0.560f, 0.585f, 0.640f, 1.00f);
-    const ImVec4 faint   (0.380f, 0.400f, 0.450f, 1.00f);
-    const ImVec4 blue    (0.290f, 0.600f, 1.000f, 1.00f);
-    const ImVec4 green   (0.235f, 0.820f, 0.555f, 1.00f);
-    const ImVec4 teal    (0.240f, 0.760f, 0.820f, 1.00f);
-    const ImVec4 purple  (0.600f, 0.500f, 0.980f, 1.00f);
-    const ImVec4 amber   (0.980f, 0.720f, 0.260f, 1.00f);
-    const ImVec4 red     (0.960f, 0.360f, 0.390f, 1.00f);
+    const ImVec4 bg      (0.043f, 0.041f, 0.047f, 1.00f);  // warm near-black
+    const ImVec4 side    (0.078f, 0.073f, 0.082f, 1.00f);
+    const ImVec4 card    (0.107f, 0.100f, 0.110f, 1.00f);
+    const ImVec4 cardHi  (0.150f, 0.140f, 0.150f, 1.00f);
+    const ImVec4 line    (0.85f,  0.72f,  0.40f,  0.10f);  // faint gold hairline
+    const ImVec4 text    (0.940f, 0.925f, 0.905f, 1.00f);  // warm white
+    const ImVec4 dim     (0.640f, 0.610f, 0.580f, 1.00f);
+    const ImVec4 faint   (0.430f, 0.405f, 0.390f, 1.00f);
+    const ImVec4 gold    (0.918f, 0.760f, 0.330f, 1.00f);  // primary accent
+    const ImVec4 goldHi  (0.985f, 0.880f, 0.540f, 1.00f);
+    const ImVec4 goldSoft(0.690f, 0.575f, 0.350f, 1.00f);
+    const ImVec4 red     (0.878f, 0.235f, 0.275f, 1.00f);  // glossy brand red
+    const ImVec4 orange  (0.960f, 0.605f, 0.235f, 1.00f);  // warm accent
+    const ImVec4 amber   (0.955f, 0.700f, 0.300f, 1.00f);  // caution / flags
 }
 
-// Shift an accent toward warning/critical as load climbs.
+// Escalate to brand red under heavy load (base colours are stable otherwise).
 static ImVec4 LoadColor(ImVec4 base, double frac) {
-    if (frac >= 0.92) return col::red;
-    if (frac >= 0.80) return col::amber;
+    if (frac >= 0.90) return col::red;
     return base;
 }
 static ImVec4 Alpha(ImVec4 c, float a) { c.w = a; return c; }
@@ -295,11 +296,11 @@ static void PageDashboard(const SystemMemory& sys, const std::vector<AdapterVram
         vramFrac = vramTot ? (double)vramUsed / vramTot : 0;
     }
 
-    KpiCard("kRam", "Physical RAM", sys.physUsed, sys.physTotal, sys.physPercent, col::blue, H.ram, cardW);
+    KpiCard("kRam", "Physical RAM", sys.physUsed, sys.physTotal, sys.physPercent, col::gold, H.ram, cardW);
     ImGui::SameLine(0, gap);
-    KpiCard("kCom", "Commit charge", sys.commitTotal, sys.commitLimit, sys.commitPercent, col::purple, H.commit, cardW);
+    KpiCard("kCom", "Commit charge", sys.commitTotal, sys.commitLimit, sys.commitPercent, col::red, H.commit, cardW);
     ImGui::SameLine(0, gap);
-    KpiCard("kVram", "VRAM (dedicated)", vramUsed, vramTot, vramFrac, col::green, H.vram, cardW);
+    KpiCard("kVram", "VRAM (dedicated)", vramUsed, vramTot, vramFrac, col::orange, H.vram, cardW);
 
     ImGui::Dummy(ImVec2(0, 4));
 
@@ -308,7 +309,7 @@ static void PageDashboard(const SystemMemory& sys, const std::vector<AdapterVram
         CardTitle("History  \xc2\xb7  last 2 minutes");
         ImGui::Spacing();
         const History  hs[] = { H.ram, H.commit, H.vram };
-        const ImVec4   cs[] = { col::blue, col::purple, col::green };
+        const ImVec4   cs[] = { col::gold, col::red, col::orange };
         const char*    ns[] = { "RAM", "Commit", "VRAM" };
         HistoryGraph("histG", ImGui::GetContentRegionAvail(), hs, cs, ns, 3);
     }
@@ -316,26 +317,51 @@ static void PageDashboard(const SystemMemory& sys, const std::vector<AdapterVram
 
     ImGui::Dummy(ImVec2(0, 4));
 
-    // --- Info chips ---
-    char b0[32], b1[32], b2[32], b3[32], b4[32], b5[32];
-    float cw = (ImGui::GetContentRegionAvail().x - 5 * 10.0f) / 6.0f;
-    Chip("Available",  FmtBytes(sys.physAvail, b0, sizeof(b0)), cw); ImGui::SameLine(0, 10);
-    Chip("Cached",     FmtBytes(sys.systemCache, b1, sizeof(b1)), cw); ImGui::SameLine(0, 10);
-    Chip("Paged pool", FmtBytes(sys.kernelPaged, b2, sizeof(b2)), cw); ImGui::SameLine(0, 10);
-    snprintf(b3, sizeof(b3), "%u", sys.processCount);
-    Chip("Processes",  b3, cw); ImGui::SameLine(0, 10);
-    snprintf(b4, sizeof(b4), "%u", sys.threadCount);
-    Chip("Threads",    b4, cw); ImGui::SameLine(0, 10);
-    snprintf(b5, sizeof(b5), "%u", sys.handleCount);
-    Chip("Handles",    b5, cw);
+    // --- Commit note ---
+    {
+        char pk[32];
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextColored(col::dim,
+            "Commit charge is what your page file backs \xe2\x80\x94 limit = RAM + all page files. "
+            "Peak this session: %s.", FmtBytes(sys.commitPeak, pk, sizeof(pk)));
+        ImGui::PopTextWrapPos();
+    }
+    ImGui::Dummy(ImVec2(0, 6));
+
+    // --- Detail chips (two rows of four) ---
+    const float cgap = 12.0f;
+    float cw = (ImGui::GetContentRegionAvail().x - 3 * cgap) / 4.0f;
+    char cb[8][40];
+    Chip("Available",      FmtBytes(sys.physAvail,      cb[0], 40), cw); ImGui::SameLine(0, cgap);
+    Chip("Cached",         FmtBytes(sys.systemCache,    cb[1], 40), cw); ImGui::SameLine(0, cgap);
+    Chip("Commit peak",    FmtBytes(sys.commitPeak,     cb[2], 40), cw); ImGui::SameLine(0, cgap);
+    Chip("Paged pool",     FmtBytes(sys.kernelPaged,    cb[3], 40), cw);
+    Chip("Non-paged pool", FmtBytes(sys.kernelNonpaged, cb[4], 40), cw); ImGui::SameLine(0, cgap);
+    snprintf(cb[5], 40, "%u", sys.processCount); Chip("Processes", cb[5], cw); ImGui::SameLine(0, cgap);
+    snprintf(cb[6], 40, "%u", sys.threadCount);  Chip("Threads",   cb[6], cw); ImGui::SameLine(0, cgap);
+    snprintf(cb[7], 40, "%u", sys.handleCount);  Chip("Handles",   cb[7], cw);
 }
 
-static void PageProcesses(const std::vector<ProcessMemory>& procs, uint64_t accessiblePrivate) {
+static void PageProcesses(const SystemMemory& sys, const std::vector<ProcessMemory>& procs,
+                          uint64_t accessiblePrivate) {
     PushF(g_fH1); ImGui::TextColored(col::text, "Processes"); ImGui::PopFont();
-    char sum[32];
-    ImGui::TextColored(col::dim, "Sorted by private commit \xe2\x80\x94 the page-file eaters  \xc2\xb7  %s across %d",
-                       FmtBytes(accessiblePrivate, sum, sizeof(sum)), (int)procs.size());
+    ImGui::TextColored(col::dim, "Private commit vs working set \xe2\x80\x94 who actually fills your page file");
     ImGui::Dummy(ImVec2(0, 6));
+
+    // High-level headline (mirrors the GPU tab's resident card)
+    if (CardBegin("procHead", ImVec2(0, 0), ImGuiChildFlags_AutoResizeY)) {
+        CardTitle("System memory  \xc2\xb7  where private commit lands");
+        ImGui::Spacing();
+        UsageBar("Physical RAM  \xc2\xb7  working sets live here",
+                 sys.physUsed, sys.physTotal, sys.physPercent, col::gold);
+        UsageBar("Commit charge  \xc2\xb7  RAM + page file, where private commit lands",
+                 sys.commitTotal, sys.commitLimit, sys.commitPercent, col::red);
+        char sum[32];
+        ImGui::TextColored(col::dim, "%d processes  \xc2\xb7  %s readable private commit total",
+                           (int)procs.size(), FmtBytes(accessiblePrivate, sum, sizeof(sum)));
+    }
+    CardEnd();
+    ImGui::Dummy(ImVec2(0, 4));
 
     uint64_t maxPriv = procs.empty() ? 1 : procs.front().privateBytes;
     if (maxPriv == 0) maxPriv = 1;
@@ -390,7 +416,7 @@ static void PageProcesses(const std::vector<ProcessMemory>& procs, uint64_t acce
                 float  fr = (float)((double)p->privateBytes / (double)maxPriv);
                 ImGui::GetWindowDrawList()->AddRectFilled(
                     cp, ImVec2(cp.x + cw * fr, cp.y + lh),
-                    ImGui::GetColorU32(Alpha(col::blue, 0.18f)), 3.0f);
+                    ImGui::GetColorU32(Alpha(col::gold, 0.18f)), 3.0f);
                 PushF(g_fMono); ImGui::TextColored(col::text, "%s", FmtBytes(p->privateBytes, a, sizeof(a))); ImGui::PopFont();
             }
             ImGui::TableNextColumn();
@@ -419,8 +445,8 @@ static void PageGpu(const std::vector<AdapterVram>& gpus, const std::vector<Proc
             if (g.hasUsage) {
                 double df = g.dedicatedTotal ? (double)g.dedicatedUsage / g.dedicatedTotal : 0;
                 double sf = g.sharedTotal    ? (double)g.sharedUsage    / g.sharedTotal    : 0;
-                UsageBar("On-card VRAM (resident)",      g.dedicatedUsage, g.dedicatedTotal, df, col::green);
-                UsageBar("Shared system RAM (resident)", g.sharedUsage,    g.sharedTotal,    sf, col::teal);
+                UsageBar("On-card VRAM (resident)",      g.dedicatedUsage, g.dedicatedTotal, df, col::orange);
+                UsageBar("Shared system RAM (resident)", g.sharedUsage,    g.sharedTotal,    sf, col::goldSoft);
             }
             ImGui::PopID();
         }
@@ -498,9 +524,9 @@ static void NavItem(const char* label, int idx, int* page) {
     ImVec2 p0 = ImGui::GetCursorScreenPos();
     // Buttons keep their highlight inside the padded area (Selectable bleeds to
     // the window edge), so the active pill reads as a proper inset container.
-    ImGui::PushStyleColor(ImGuiCol_Button,        sel ? Alpha(col::blue, 0.16f) : ImVec4(0, 0, 0, 0));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, sel ? Alpha(col::blue, 0.20f) : Alpha(col::text, 0.06f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive,  Alpha(col::blue, 0.24f));
+    ImGui::PushStyleColor(ImGuiCol_Button,        sel ? Alpha(col::gold, 0.16f) : ImVec4(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, sel ? Alpha(col::gold, 0.20f) : Alpha(col::text, 0.06f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive,  Alpha(col::gold, 0.24f));
     ImGui::PushStyleColor(ImGuiCol_Text,          sel ? col::text : col::dim);
     ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
     if (ImGui::Button(label, ImVec2(-FLT_MIN, 38.0f))) *page = idx;
@@ -530,8 +556,8 @@ static void DrawUI(const SystemMemory& sys, const std::vector<AdapterVram>& gpus
     ImGui::BeginChild("sidebar", ImVec2(216, 0),
                       ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollbar);
     PushF(g_fH2);
-    ImGui::TextColored(col::blue, "RV");
-    ImGui::SameLine(0, 6);
+    ImGui::TextColored(col::gold, "R"); ImGui::SameLine(0, 0);
+    ImGui::TextColored(col::red,  "V"); ImGui::SameLine(0, 6);
     ImGui::TextColored(col::text, "MEM Viewer");
     ImGui::PopFont();
     ImGui::TextColored(col::faint, "RAM \xc2\xb7 VRAM \xc2\xb7 commit");
@@ -563,7 +589,7 @@ static void DrawUI(const SystemMemory& sys, const std::vector<AdapterVram>& gpus
     ImGui::BeginChild("content", ImVec2(0, 0), ImGuiChildFlags_AlwaysUseWindowPadding);
     switch (page) {
         case 0: PageDashboard(sys, gpus, H); break;
-        case 1: PageProcesses(procs, accessiblePrivate); break;
+        case 1: PageProcesses(sys, procs, accessiblePrivate); break;
         case 2: PageGpu(gpus, procVram); break;
     }
     ImGui::EndChild();
@@ -608,9 +634,9 @@ static void ApplyTheme() {
     c[ImGuiCol_TableRowBgAlt]   = Alpha(col::text, 0.025f);
     c[ImGuiCol_TableBorderLight]= col::line;
     c[ImGuiCol_TableBorderStrong]=col::line;
-    c[ImGuiCol_Header]          = Alpha(col::blue, 0.16f);
+    c[ImGuiCol_Header]          = Alpha(col::gold, 0.16f);
     c[ImGuiCol_HeaderHovered]   = Alpha(col::text, 0.06f);
-    c[ImGuiCol_HeaderActive]    = Alpha(col::blue, 0.22f);
+    c[ImGuiCol_HeaderActive]    = Alpha(col::gold, 0.22f);
     c[ImGuiCol_Button]          = Alpha(col::text, 0.06f);
     c[ImGuiCol_ButtonHovered]   = Alpha(col::text, 0.10f);
     c[ImGuiCol_ButtonActive]    = Alpha(col::text, 0.14f);
@@ -618,7 +644,7 @@ static void ApplyTheme() {
     c[ImGuiCol_ScrollbarGrab]   = Alpha(col::text, 0.14f);
     c[ImGuiCol_ScrollbarGrabHovered] = Alpha(col::text, 0.22f);
     c[ImGuiCol_Separator]       = col::line;
-    c[ImGuiCol_PlotHistogram]   = col::blue;
+    c[ImGuiCol_PlotHistogram]   = col::gold;
 }
 
 static bool FileExists(const char* p) {
@@ -646,6 +672,11 @@ static void LoadFonts() {
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
     WNDCLASSEXW wc = { sizeof(wc), CS_CLASSDC, WndProc, 0, 0, hInstance,
                        nullptr, nullptr, nullptr, nullptr, L"RVMemViewerWnd", nullptr };
+    // RV logo icon (resource 101) for title bar, taskbar and Alt-Tab.
+    wc.hIcon   = (HICON)LoadImageW(hInstance, MAKEINTRESOURCEW(101), IMAGE_ICON, 0, 0, LR_DEFAULTSIZE);
+    wc.hIconSm = (HICON)LoadImageW(hInstance, MAKEINTRESOURCEW(101), IMAGE_ICON,
+                                   GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), 0);
+    wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     RegisterClassExW(&wc);
     HWND hwnd = CreateWindowW(wc.lpszClassName, L"RV MEM Viewer",
                               WS_OVERLAPPEDWINDOW, 100, 100, 1120, 800,

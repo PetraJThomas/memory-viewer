@@ -19,6 +19,10 @@ if not exist "%IMGUI%\imgui.cpp" (
 if not exist "%ROOT%build" mkdir "%ROOT%build"
 pushd "%ROOT%build"
 
+echo Compiling resources...
+rc /nologo /i "%ROOT%." /fo "app.res" "%ROOT%app.rc"
+if errorlevel 1 ( echo Resource compile FAILED. & popd & exit /b 1 )
+
 echo Compiling...
 cl /nologo /std:c++17 /EHsc /O2 /MT /DNDEBUG /DUNICODE /D_UNICODE ^
    /I"%ROOT%src" /I"%IMGUI%" /I"%IMGUI%\backends" ^
@@ -30,6 +34,7 @@ cl /nologo /std:c++17 /EHsc /O2 /MT /DNDEBUG /DUNICODE /D_UNICODE ^
    "%IMGUI%\imgui_widgets.cpp" ^
    "%IMGUI%\backends\imgui_impl_win32.cpp" ^
    "%IMGUI%\backends\imgui_impl_dx11.cpp" ^
+   "app.res" ^
    /link /SUBSYSTEM:WINDOWS /OUT:RVMemViewer.exe
 
 set ERR=%ERRORLEVEL%

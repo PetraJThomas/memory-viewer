@@ -1,0 +1,3 @@
+// Application resources for RV MEM Viewer.
+// 101 = main application icon (multi-resolution, generated from Logo.png).
+101 ICON "app.ico"
