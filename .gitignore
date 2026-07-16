@@ -31,3 +31,7 @@ third_party/imgui/
 imgui.ini
 *.tmp
 Thumbs.db
+
+# --- Crash dumps (may contain fragments of kernel memory - never commit) ---
+Minidump/
+*.dmp

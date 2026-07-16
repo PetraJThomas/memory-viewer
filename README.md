@@ -7,6 +7,18 @@ per-process list hides — plus real system-wide VRAM usage.
 Built with **C++ + Dear ImGui** (Win32 + DirectX 11). GPU-drawn, dark UI, no
 .NET runtime. Idle footprint ~50 MB working set (mostly shared GPU driver DLLs).
 
+The UI has two tabs:
+
+**Overview** — system RAM, commit charge, kernel pools, VRAM totals, and a
+per-process table (private commit vs working set).
+
+**GPU Processes** — per-process GPU memory. Leads with the *physically resident*
+VRAM (the real, card-capped number), then lists per-process **committed**
+allocations. Because GPU memory is virtualized (WDDM), these overlap and sum to
+far more than the card holds: the compositor (`dwm`) double-counts every visible
+window's surface, and capture/overlay processes over-report — both are flagged
+inline so the numbers aren't mistaken for real occupancy.
+
 ## What it shows
 
 - **Physical RAM** — used / total with a load bar.

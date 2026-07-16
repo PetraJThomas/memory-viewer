@@ -64,6 +64,16 @@ struct AdapterVram {
     long          luidHigh = 0;
 };
 
+// Per-process GPU memory (what each process is holding in VRAM), from the
+// PDH "GPU Process Memory" counter set -- the same source as Task Manager's
+// per-process "Dedicated GPU memory" column.
+struct ProcessVram {
+    uint32_t    pid = 0;
+    std::string name;           // UTF-8
+    uint64_t    dedicated = 0;  // on-board VRAM held by this process
+    uint64_t    shared    = 0;  // shared (system RAM) GPU memory held
+};
+
 // --- API -------------------------------------------------------------------
 bool QuerySystemMemory(SystemMemory& out);
 
@@ -75,3 +85,7 @@ void QueryProcesses(std::vector<ProcessMemory>& out, uint64_t& outAccessiblePriv
 bool InitVram();
 void ShutdownVram();
 void QueryVram(std::vector<AdapterVram>& out);
+
+// Per-process GPU memory. Must be called after QueryVram in the same refresh
+// tick (they share one PDH sample). Sorted by dedicated usage desc.
+void QueryProcessVram(std::vector<ProcessVram>& out);

@@ -9,6 +9,7 @@
 #include <tchar.h>
 #include <cstdio>
 #include <cfloat>
+#include <cctype>
 #include <vector>
 #include <algorithm>
 
@@ -61,13 +62,27 @@ static void UsageBar(const char* label, uint64_t used, uint64_t total, double fr
     ImGui::PopStyleColor();
 }
 
+// Some processes' per-process GPU counter is an accounting artifact, not real
+// occupancy: the compositor (dwm) sums every window's surface (double-counted),
+// and capture/overlay processes over-report. Flag them so the UI can say so.
+enum class GpuProcKind { Normal, Compositor, Overlay };
+static GpuProcKind ClassifyGpuProc(const std::string& name) {
+    std::string n;
+    n.reserve(name.size());
+    for (char c : name) n += (char)tolower((unsigned char)c);
+    if (n.rfind("dwm", 0) == 0)                 return GpuProcKind::Compositor;
+    if (n.find("overlay") != std::string::npos) return GpuProcKind::Overlay;
+    return GpuProcKind::Normal;
+}
+
 // ---------------------------------------------------------------------------
 // The actual viewer UI (one full-window panel)
 // ---------------------------------------------------------------------------
 static void DrawUI(const SystemMemory& sys,
                    const std::vector<AdapterVram>& gpus,
                    const std::vector<ProcessMemory>& procs,
-                   uint64_t accessiblePrivate) {
+                   uint64_t accessiblePrivate,
+                   const std::vector<ProcessVram>& procVram) {
     const ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(vp->WorkPos);
     ImGui::SetNextWindowSize(vp->WorkSize);
@@ -76,6 +91,11 @@ static void DrawUI(const SystemMemory& sys,
     ImGui::Begin("MemoryViewer", nullptr, flags);
 
     char a[32], b[32];
+
+    if (!ImGui::BeginTabBar("tabs")) { ImGui::End(); return; }
+
+    // =========================== TAB 1: Overview ============================
+    if (ImGui::BeginTabItem("Overview")) {
 
     // ---- System RAM + commit ------------------------------------------------
     ImGui::SeparatorText("System Memory");
@@ -177,6 +197,100 @@ static void DrawUI(const SystemMemory& sys,
         ImGui::EndTable();
     }
 
+        ImGui::EndTabItem();
+    } // Overview
+
+    // ========================= TAB 2: GPU Processes =========================
+    if (ImGui::BeginTabItem("GPU Processes")) {
+        const ImVec4 amber(0.95f, 0.65f, 0.15f, 1.0f);
+
+        // ---- The honest headline: what is *physically resident* on the card ----
+        ImGui::SeparatorText("Physically resident on the GPU  \xe2\x80\x94  the real number");
+        if (gpus.empty())
+            ImGui::TextDisabled("No GPU adapter reported.");
+        for (size_t i = 0; i < gpus.size(); ++i) {
+            const AdapterVram& g = gpus[i];
+            ImGui::PushID((int)(1000 + i));
+            ImGui::Text("%s", g.name.c_str());
+            if (g.hasUsage) {
+                double dfrac = g.dedicatedTotal ? (double)g.dedicatedUsage / g.dedicatedTotal : 0.0;
+                double sfrac = g.sharedTotal    ? (double)g.sharedUsage    / g.sharedTotal    : 0.0;
+                UsageBar("  On-card VRAM (resident)",       g.dedicatedUsage, g.dedicatedTotal, dfrac);
+                UsageBar("  Shared system RAM (resident)",  g.sharedUsage,    g.sharedTotal,    sfrac);
+            }
+            ImGui::PopID();
+        }
+
+        // ---- Per-process: committed / virtualized, NOT resident ----
+        ImGui::Spacing();
+        ImGui::SeparatorText("Per-process GPU memory  \xe2\x80\x94  committed, overlaps, not physical");
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextDisabled(
+            "Below are committed (virtualized) allocations \xe2\x80\x94 the same values Task Manager shows. "
+            "They double-count shared surfaces and include memory that isn't resident, so they overlap "
+            "and sum to far more than the card holds. Use this to RANK who leans on the GPU, not to total VRAM.");
+        ImGui::PopTextWrapPos();
+
+        // Explicit call-out for the compositor, the biggest double-counter.
+        for (const ProcessVram& p : procVram) {
+            if (ClassifyGpuProc(p.name) == GpuProcKind::Compositor) {
+                ImGui::PushStyleColor(ImGuiCol_Text, amber);
+                ImGui::Text("%s reports %s", p.name.c_str(), FmtBytes(p.dedicated, a, sizeof(a)));
+                ImGui::PopStyleColor();
+                ImGui::SameLine();
+                ImGui::PushTextWrapPos(0.0f);
+                ImGui::TextDisabled("\xe2\x80\x94 the compositor. That's the SUM of every visible window's "
+                                    "surface, double-counted. It is NOT extra memory the card is holding.");
+                ImGui::PopTextWrapPos();
+                break;
+            }
+        }
+        ImGui::TextDisabled("(%d processes reference the GPU)", (int)procVram.size());
+        ImGui::Spacing();
+
+        if (procVram.empty()) {
+            ImGui::TextUnformatted("No per-process GPU memory reported.");
+            ImGui::TextDisabled("Needs a WDDM 2.0+ GPU; processes only appear while they hold VRAM.");
+        } else {
+            ImGuiTableFlags gflags = ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders |
+                                     ImGuiTableFlags_ScrollY | ImGuiTableFlags_Resizable;
+            if (ImGui::BeginTable("gpuprocs", 5, gflags, ImVec2(0, 0))) {
+                ImGui::TableSetupScrollFreeze(0, 1);
+                ImGui::TableSetupColumn("PID",        ImGuiTableColumnFlags_WidthFixed, 70);
+                ImGui::TableSetupColumn("Name",       ImGuiTableColumnFlags_WidthStretch, 1.0f);
+                ImGui::TableSetupColumn("Committed",  ImGuiTableColumnFlags_WidthFixed, 120);
+                ImGui::TableSetupColumn("Shared",     ImGuiTableColumnFlags_WidthFixed, 110);
+                ImGui::TableSetupColumn("Note",       ImGuiTableColumnFlags_WidthStretch, 1.4f);
+                ImGui::TableHeadersRow();
+
+                const ImU32 tint = ImGui::GetColorU32(ImVec4(0.40f, 0.28f, 0.05f, 0.45f));
+                for (const ProcessVram& p : procVram) {
+                    GpuProcKind kind = ClassifyGpuProc(p.name);
+                    ImGui::TableNextRow();
+                    if (kind != GpuProcKind::Normal)
+                        ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, tint);
+
+                    ImGui::TableNextColumn(); ImGui::Text("%u", p.pid);
+                    ImGui::TableNextColumn();
+                    if (kind != GpuProcKind::Normal) ImGui::TextColored(amber, "%s", p.name.c_str());
+                    else                             ImGui::TextUnformatted(p.name.c_str());
+                    ImGui::TableNextColumn(); ImGui::TextUnformatted(FmtBytes(p.dedicated, a, sizeof(a)));
+                    ImGui::TableNextColumn();
+                    if (p.shared) ImGui::TextUnformatted(FmtBytes(p.shared, b, sizeof(b)));
+                    else          ImGui::TextDisabled("-");
+                    ImGui::TableNextColumn();
+                    if (kind == GpuProcKind::Compositor)
+                        ImGui::TextDisabled("compositor \xc2\xb7 sums all windows (double-counted)");
+                    else if (kind == GpuProcKind::Overlay)
+                        ImGui::TextDisabled("overlay \xc2\xb7 over-reports");
+                }
+                ImGui::EndTable();
+            }
+        }
+        ImGui::EndTabItem();
+    } // GPU Processes
+
+    ImGui::EndTabBar();
     ImGui::End();
 }
 
@@ -216,6 +330,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
     SystemMemory sys{};
     std::vector<AdapterVram>   gpus;
     std::vector<ProcessMemory> procs;
+    std::vector<ProcessVram>   procVram;
     uint64_t accessiblePrivate = 0;
     double   sinceRefresh = 1e9; // force immediate first refresh
 
@@ -246,14 +361,15 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
         if (sinceRefresh >= 1.0) {
             sinceRefresh = 0.0;
             QuerySystemMemory(sys);
-            QueryVram(gpus);
+            QueryVram(gpus);            // collects the shared PDH sample...
+            QueryProcessVram(procVram); // ...which this then reads
             QueryProcesses(procs, accessiblePrivate);
         }
 
         ImGui_ImplDX11_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
-        DrawUI(sys, gpus, procs, accessiblePrivate);
+        DrawUI(sys, gpus, procs, accessiblePrivate, procVram);
         ImGui::Render();
 
         const float clear[4] = { 0.09f, 0.09f, 0.11f, 1.0f };

@@ -4,6 +4,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <psapi.h>
+#include <tlhelp32.h>
 #include <dxgi1_4.h>
 #include <wrl/client.h>
 #include <pdh.h>
@@ -27,6 +28,40 @@ static std::string WideToUtf8(const wchar_t* w) {
     std::string s(static_cast<size_t>(len - 1), '\0');
     WideCharToMultiByte(CP_UTF8, 0, w, -1, s.data(), len, nullptr, nullptr);
     return s;
+}
+
+// Resolve a PID to its executable basename (UTF-8), or "<pid N>" if we can't.
+static std::string ProcessBaseName(DWORD pid) {
+    if (pid == 0) return "System Idle";
+    HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    std::string name;
+    if (h) {
+        wchar_t path[MAX_PATH];
+        DWORD len = MAX_PATH;
+        if (QueryFullProcessImageNameW(h, 0, path, &len) && len > 0) {
+            const wchar_t* base = path;
+            for (const wchar_t* p = path; *p; ++p)
+                if (*p == L'\\' || *p == L'/') base = p + 1;
+            name = WideToUtf8(base);
+        }
+        CloseHandle(h);
+    }
+    if (name.empty()) name = "<pid " + std::to_string(pid) + ">";
+    return name;
+}
+
+// Map every PID -> executable basename via a Toolhelp snapshot. Unlike
+// OpenProcess this also names protected/system processes (dwm, csrss, ...).
+static void BuildPidNameMap(std::vector<std::pair<DWORD, std::string>>& map) {
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE) return;
+    PROCESSENTRY32W pe{};
+    pe.dwSize = sizeof(pe);
+    if (Process32FirstW(snap, &pe)) {
+        do { map.emplace_back(pe.th32ProcessID, WideToUtf8(pe.szExeFile)); }
+        while (Process32NextW(snap, &pe));
+    }
+    CloseHandle(snap);
 }
 
 // ---------------------------------------------------------------------------
@@ -132,9 +167,11 @@ namespace {
     ComPtr<IDXGIFactory1>              g_factory;
     std::vector<ComPtr<IDXGIAdapter3>> g_adapters;
 
-    PDH_HQUERY   g_pdhQuery      = nullptr;
-    PDH_HCOUNTER g_cDedicated    = nullptr;
-    PDH_HCOUNTER g_cShared       = nullptr;
+    PDH_HQUERY   g_pdhQuery       = nullptr;
+    PDH_HCOUNTER g_cDedicated     = nullptr;  // adapter-wide dedicated
+    PDH_HCOUNTER g_cShared        = nullptr;  // adapter-wide shared
+    PDH_HCOUNTER g_cProcDedicated = nullptr;  // per-process dedicated
+    PDH_HCOUNTER g_cProcShared    = nullptr;  // per-process shared
 
     // Sum PDH "GPU Adapter Memory" instances for a given LUID.
     // Instance names look like: "luid_0x00000000_0x0000A1B2_phys_0".
@@ -193,10 +230,12 @@ bool InitVram() {
         a1.Reset();
     }
 
-    // PDH counters for system-wide GPU memory (English names => locale-proof).
+    // PDH counters for GPU memory (English names => locale-proof).
     if (PdhOpenQueryW(nullptr, 0, &g_pdhQuery) == ERROR_SUCCESS) {
         PdhAddEnglishCounterA(g_pdhQuery, "\\GPU Adapter Memory(*)\\Dedicated Usage", 0, &g_cDedicated);
         PdhAddEnglishCounterA(g_pdhQuery, "\\GPU Adapter Memory(*)\\Shared Usage",    0, &g_cShared);
+        PdhAddEnglishCounterA(g_pdhQuery, "\\GPU Process Memory(*)\\Dedicated Usage", 0, &g_cProcDedicated);
+        PdhAddEnglishCounterA(g_pdhQuery, "\\GPU Process Memory(*)\\Shared Usage",    0, &g_cProcShared);
         PdhCollectQueryData(g_pdhQuery); // prime
     }
     return !g_adapters.empty();
@@ -204,7 +243,7 @@ bool InitVram() {
 
 void ShutdownVram() {
     if (g_pdhQuery) { PdhCloseQuery(g_pdhQuery); g_pdhQuery = nullptr; }
-    g_cDedicated = g_cShared = nullptr;
+    g_cDedicated = g_cShared = g_cProcDedicated = g_cProcShared = nullptr;
     g_adapters.clear();
     g_factory.Reset();
 }
@@ -235,4 +274,75 @@ void QueryVram(std::vector<AdapterVram>& out) {
         }
         out.push_back(std::move(v));
     }
+}
+
+namespace {
+    // Accumulate a PDH "GPU Process Memory" counter array into a pid->bytes map.
+    // Instance names look like: "pid_1234_luid_0x00000000_0x0000A1B2_phys_0".
+    void AccumulateProcVram(PDH_HCOUNTER counter, std::vector<std::pair<DWORD,uint64_t>>& acc) {
+        if (!counter) return;
+        DWORD bufSize = 0, itemCount = 0;
+        if (PdhGetFormattedCounterArrayA(counter, PDH_FMT_LARGE, &bufSize, &itemCount, nullptr)
+                != PDH_MORE_DATA || bufSize == 0)
+            return;
+
+        std::vector<BYTE> buf(bufSize);
+        auto* items = reinterpret_cast<PDH_FMT_COUNTERVALUE_ITEM_A*>(buf.data());
+        if (PdhGetFormattedCounterArrayA(counter, PDH_FMT_LARGE, &bufSize, &itemCount, items)
+                != ERROR_SUCCESS)
+            return;
+
+        for (DWORD i = 0; i < itemCount; ++i) {
+            unsigned int pid = 0, h = 0, l = 0, phys = 0;
+            if (sscanf_s(items[i].szName, "pid_%u_luid_0x%x_0x%x_phys_%u", &pid, &h, &l, &phys) >= 1 &&
+                items[i].FmtValue.CStatus == ERROR_SUCCESS) {
+                uint64_t val = (uint64_t)items[i].FmtValue.largeValue;
+                // Sum all luid/phys segments belonging to this pid.
+                bool found = false;
+                for (auto& e : acc)
+                    if (e.first == pid) { e.second += val; found = true; break; }
+                if (!found) acc.emplace_back((DWORD)pid, val);
+            }
+        }
+    }
+}
+
+void QueryProcessVram(std::vector<ProcessVram>& out) {
+    out.clear();
+    if (!g_pdhQuery) return;
+
+    std::vector<std::pair<DWORD,uint64_t>> ded, shr;
+    AccumulateProcVram(g_cProcDedicated, ded);
+    AccumulateProcVram(g_cProcShared,    shr);
+
+    // Merge dedicated + shared per pid.
+    for (auto& d : ded) {
+        ProcessVram pv;
+        pv.pid = d.first;
+        pv.dedicated = d.second;
+        out.push_back(pv);
+    }
+    for (auto& s : shr) {
+        bool found = false;
+        for (auto& pv : out)
+            if (pv.pid == s.first) { pv.shared = s.second; found = true; break; }
+        if (!found) { ProcessVram pv; pv.pid = s.first; pv.shared = s.second; out.push_back(pv); }
+    }
+
+    // Drop processes holding nothing, then name + sort the rest.
+    out.erase(std::remove_if(out.begin(), out.end(),
+              [](const ProcessVram& p){ return p.dedicated == 0 && p.shared == 0; }), out.end());
+
+    // Resolve names via Toolhelp so protected processes (dwm, csrss) are named.
+    std::vector<std::pair<DWORD, std::string>> nameMap;
+    BuildPidNameMap(nameMap);
+    for (auto& pv : out) {
+        for (auto& e : nameMap)
+            if (e.first == pv.pid) { pv.name = e.second; break; }
+        if (pv.name.empty()) pv.name = ProcessBaseName(pv.pid); // fallback
+    }
+    std::sort(out.begin(), out.end(), [](const ProcessVram& a, const ProcessVram& b) {
+        if (a.dedicated != b.dedicated) return a.dedicated > b.dedicated;
+        return a.shared > b.shared;
+    });
 }
