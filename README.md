@@ -104,3 +104,7 @@ loaded from the system, a custom gold/red theme, rounded "card" containers, and
 - Connected-monitor list per adapter (`IDXGIAdapter::EnumOutputs`).
 - Minimize-to-tray for always-on monitoring.
 - CSV/lightweight logging of history.
+
+## License
+
+MIT © 2026 Petra Thomas. See [LICENSE](LICENSE).
