@@ -518,7 +518,7 @@ static void DrawUI(const SystemMemory& sys, const std::vector<AdapterVram>& gpus
     ImGui::SetNextWindowPos(vp->WorkPos);
     ImGui::SetNextWindowSize(vp->WorkSize);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-    ImGui::Begin("MemoryViewer", nullptr,
+    ImGui::Begin("RVMemViewer", nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
                  ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus);
     ImGui::PopStyleVar();
@@ -554,8 +554,13 @@ static void DrawUI(const SystemMemory& sys, const std::vector<AdapterVram>& gpus
     ImGui::SameLine(0, 0);
 
     // ---- Content ----
+    // Responsive side padding: grows with width so it reads well both at the
+    // default size and maximized on an ultra-wide monitor.
+    float contentW = vp->WorkSize.x - 202.0f;
+    float padX = contentW * 0.030f;
+    padX = padX < 34.0f ? 34.0f : (padX > 140.0f ? 140.0f : padX);
     ImGui::PushStyleColor(ImGuiCol_ChildBg, col::bg);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(34, 30));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(padX, 30));
     ImGui::BeginChild("content", ImVec2(0, 0), 0);
     switch (page) {
         case 0: PageDashboard(sys, gpus, H); break;
@@ -641,7 +646,7 @@ static void LoadFonts() {
 // ---------------------------------------------------------------------------
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
     WNDCLASSEXW wc = { sizeof(wc), CS_CLASSDC, WndProc, 0, 0, hInstance,
-                       nullptr, nullptr, nullptr, nullptr, L"MemoryViewerWnd", nullptr };
+                       nullptr, nullptr, nullptr, nullptr, L"RVMemViewerWnd", nullptr };
     RegisterClassExW(&wc);
     HWND hwnd = CreateWindowW(wc.lpszClassName, L"RV MEM Viewer",
                               WS_OVERLAPPEDWINDOW, 100, 100, 1120, 800,

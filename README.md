@@ -43,7 +43,7 @@ release tag) and build:
 
 ```bat
 setup.bat     :: like `npm install` - fetches third_party\imgui @ pinned tag
-build.bat     :: compiles build\MemoryViewer.exe
+build.bat     :: compiles build\RVMemViewer.exe
 ```
 
 `build.bat` auto-runs `setup.bat` if the dependency is missing, so `build.bat`

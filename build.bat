@@ -30,13 +30,13 @@ cl /nologo /std:c++17 /EHsc /O2 /MT /DNDEBUG /DUNICODE /D_UNICODE ^
    "%IMGUI%\imgui_widgets.cpp" ^
    "%IMGUI%\backends\imgui_impl_win32.cpp" ^
    "%IMGUI%\backends\imgui_impl_dx11.cpp" ^
-   /link /SUBSYSTEM:WINDOWS /OUT:MemoryViewer.exe
+   /link /SUBSYSTEM:WINDOWS /OUT:RVMemViewer.exe
 
 set ERR=%ERRORLEVEL%
 popd
 if %ERR%==0 (
     echo.
-    echo Built: %ROOT%build\MemoryViewer.exe
+    echo Built: %ROOT%build\RVMemViewer.exe
 ) else (
     echo.
     echo Build FAILED with code %ERR%.
