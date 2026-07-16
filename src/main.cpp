@@ -525,8 +525,10 @@ static void DrawUI(const SystemMemory& sys, const std::vector<AdapterVram>& gpus
 
     // ---- Sidebar ----
     ImGui::PushStyleColor(ImGuiCol_ChildBg, col::side);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(22, 24));
-    ImGui::BeginChild("sidebar", ImVec2(202, 0), 0, ImGuiWindowFlags_NoScrollbar);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(18, 24));
+    // AlwaysUseWindowPadding: borderless children ignore WindowPadding otherwise.
+    ImGui::BeginChild("sidebar", ImVec2(216, 0),
+                      ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollbar);
     PushF(g_fH2);
     ImGui::TextColored(col::blue, "RV");
     ImGui::SameLine(0, 6);
@@ -554,14 +556,11 @@ static void DrawUI(const SystemMemory& sys, const std::vector<AdapterVram>& gpus
     ImGui::SameLine(0, 0);
 
     // ---- Content ----
-    // Responsive side padding: grows with width so it reads well both at the
-    // default size and maximized on an ultra-wide monitor.
-    float contentW = vp->WorkSize.x - 202.0f;
-    float padX = contentW * 0.030f;
-    padX = padX < 34.0f ? 34.0f : (padX > 140.0f ? 140.0f : padX);
+    // Fixed, consistent container padding (matches the sidebar) so the two
+    // panels read as one system at any window size.
     ImGui::PushStyleColor(ImGuiCol_ChildBg, col::bg);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(padX, 30));
-    ImGui::BeginChild("content", ImVec2(0, 0), 0);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(32, 30));
+    ImGui::BeginChild("content", ImVec2(0, 0), ImGuiChildFlags_AlwaysUseWindowPadding);
     switch (page) {
         case 0: PageDashboard(sys, gpus, H); break;
         case 1: PageProcesses(procs, accessiblePrivate); break;
